@@ -167,13 +167,13 @@ public class CloseClawStep : IGrabAnimationStep
     public void Execute()
     {
         float leftAngle = claw.leftClaw.localRotation.eulerAngles.x + speed * Time.deltaTime;
-        float rightAngle = claw.rightClaw.localRotation.eulerAngles.x - speed * Time.deltaTime;
+        float rightAngle = claw.rightClaw.localRotation.eulerAngles.x + speed * Time.deltaTime;
 
         // 限制最大角度
         if (leftAngle >= targetAngle)
         {
             leftAngle = targetAngle;
-            rightAngle = -targetAngle;
+            rightAngle = targetAngle;
         }
 
         claw.leftClaw.localRotation = Quaternion.Euler(leftAngle, 0, 0);
@@ -289,7 +289,7 @@ public class OpenClawStep : IGrabAnimationStep
     public void Execute()
     {
         float leftAngle = claw.leftClaw.localRotation.eulerAngles.x - speed * Time.deltaTime;
-        float rightAngle = claw.rightClaw.localRotation.eulerAngles.x + speed * Time.deltaTime;
+        float rightAngle = claw.rightClaw.localRotation.eulerAngles.x - speed * Time.deltaTime;
 
         // 限制最小角度
         if (leftAngle <= 0)
