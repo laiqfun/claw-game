@@ -13,13 +13,19 @@ public class ClawController : MonoBehaviour
     public Transform leftClaw;
     public Transform rightClaw;
     public Vector3 initialPosition;
+    public Transform toysParent;
     public float grabYPos;
-    private float grabAngle = 20f;
+    public float grabAngle = 20f;
     private bool isGrab = false;
     // 动画步骤列表
     private List<IGrabAnimationStep> animationSteps;
     // 当前步骤索引
     private int currentStepIndex = -1;
+
+    // 碰撞检测相关
+    private HashSet<GameObject> leftClawCollisions = new HashSet<GameObject>();
+    private HashSet<GameObject> rightClawCollisions = new HashSet<GameObject>();
+    public GameObject connectedToy = null;
 
     void Start()
     {
@@ -30,7 +36,7 @@ public class ClawController : MonoBehaviour
 
     void FixedUpdate()
     {
-        if(!isGrab) move();
+        if (!isGrab) move();
         grab();
     }
 
@@ -107,6 +113,135 @@ public class ClawController : MonoBehaviour
             new OpenClawStep(this, grabRotationSpeed)                 // 打开爪子步骤
         };
     }
+
+    // 碰撞检测相关方法
+    private void OnTriggerEnter(Collider other)
+    {
+        // 检测是否碰到玩具
+        if (other.CompareTag("Toy"))
+        {
+            // 判断是哪个爪子碰撞到的
+            if (leftClaw.GetComponent<Collider>().bounds.Intersects(other.bounds))
+            {
+                leftClawCollisions.Add(other.gameObject);
+            }
+            else if (rightClaw.GetComponent<Collider>().bounds.Intersects(other.bounds))
+            {
+                rightClawCollisions.Add(other.gameObject);
+            }
+        }
+    }
+
+    private void OnTriggerExit(Collider other)
+    {
+        // 移除碰撞记录
+        if (other.CompareTag("Toy"))
+        {
+            leftClawCollisions.Remove(other.gameObject);
+            rightClawCollisions.Remove(other.gameObject);
+
+            // 如果连接的玩具离开爪子，断开连接
+            if (connectedToy == other.gameObject)
+            {
+                DisconnectToy();
+            }
+        }
+    }
+
+    // 检查是否可以连接玩具（两个爪子都碰到同一个玩具）
+    public bool CanConnectToy()
+    {
+        foreach (GameObject toy in leftClawCollisions)
+        {
+            if (rightClawCollisions.Contains(toy))
+            {
+                connectedToy = toy;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // 连接玩具到爪子上
+    public void ConnectToy()
+    {
+        if (connectedToy != null)
+        {
+            connectedToy.GetComponent<Rigidbody>().useGravity = false;
+            // 将玩具设置为爪子的子物体，这样会跟随爪子移动
+            connectedToy.transform.SetParent(transform);
+            Debug.Log("Connected toy: " + connectedToy.name);
+        }
+    }
+
+    // 断开玩具连接
+    public void DisconnectToy()
+    {
+        if (connectedToy != null)
+        {
+            Debug.Log("Disconnecting toy: " + connectedToy.name);
+            // 将玩具从爪子上分离
+            Rigidbody toyRb = connectedToy.GetComponent<Rigidbody>();
+            if (toyRb != null)
+                connectedToy.GetComponent<Rigidbody>().useGravity = true;
+            connectedToy.transform.SetParent(toysParent);
+            connectedToy = null;
+        }
+    }
+
+    // 检查玩具是否仍然被两个爪子夹住
+    public bool IsToyStillGrabbed()
+    {
+        if (connectedToy == null) return false;
+        return leftClawCollisions.Contains(connectedToy) && rightClawCollisions.Contains(connectedToy);
+    }
+
+    // 检查玩具是否至少被一个爪子夹住
+    public bool IsToyPartiallyGrabbed()
+    {
+        if (connectedToy == null) return false;
+        return leftClawCollisions.Contains(connectedToy) || rightClawCollisions.Contains(connectedToy);
+    }
+}
+
+// 打开爪子步骤
+public class OpenClawStep : IGrabAnimationStep
+{
+    private ClawController claw;
+    private float speed;
+
+    public OpenClawStep(ClawController claw, float speed)
+    {
+        this.claw = claw;
+        this.speed = speed;
+    }
+
+    public void Execute()
+    {
+        float leftAngle = claw.leftClaw.localRotation.eulerAngles.x - speed * Time.deltaTime;
+        float rightAngle = claw.rightClaw.localRotation.eulerAngles.x - speed * Time.deltaTime;
+
+        // 限制最小角度
+        if (leftAngle <= 0)
+        {
+            leftAngle = 0;
+            rightAngle = 0;
+        }
+
+        claw.leftClaw.localRotation = Quaternion.Euler(leftAngle, 0, 0);
+        claw.rightClaw.localRotation = Quaternion.Euler(rightAngle, 0, 0);
+
+        // 完全打开爪子时断开玩具连接
+        if (claw.connectedToy != null && leftAngle <= 0)
+        {
+            claw.DisconnectToy();
+        }
+    }
+
+    public bool IsComplete()
+    {
+        return claw.leftClaw.localRotation.eulerAngles.x <= 0;
+    }
 }
 
 // 动画步骤接口
@@ -137,8 +272,8 @@ public class DescendStep : IGrabAnimationStep
         if (claw.transform.position.y <= targetY)
         {
             claw.transform.position = new Vector3(
-                claw.transform.position.x, 
-                targetY, 
+                claw.transform.position.x,
+                targetY,
                 claw.transform.position.z
             );
         }
@@ -156,6 +291,7 @@ public class CloseClawStep : IGrabAnimationStep
     private ClawController claw;
     private float targetAngle;
     private float speed;
+    private bool hasConnectedToy = false;
 
     public CloseClawStep(ClawController claw, float targetAngle, float speed)
     {
@@ -178,6 +314,13 @@ public class CloseClawStep : IGrabAnimationStep
 
         claw.leftClaw.localRotation = Quaternion.Euler(leftAngle, 0, 0);
         claw.rightClaw.localRotation = Quaternion.Euler(rightAngle, 0, 0);
+
+        // 检查是否可以连接玩具
+        if (!hasConnectedToy && claw.CanConnectToy())
+        {
+            claw.ConnectToy();
+            hasConnectedToy = true;
+        }
     }
 
     public bool IsComplete()
@@ -212,6 +355,21 @@ public class AscendStep : IGrabAnimationStep
                 claw.transform.position.z
             );
         }
+        // 玩具需要紧紧被夹住
+        if (claw.connectedToy != null)
+        {
+            // 使用插值方式平滑移动玩具
+            claw.connectedToy.transform.position = Vector3.Lerp(
+                claw.connectedToy.transform.position,
+                claw.transform.position,
+                speed * Time.deltaTime
+            );
+        }
+        // 检查玩具是否仍然被夹住，如果没有则断开连接
+        if (claw.connectedToy != null && !claw.IsToyStillGrabbed())
+        {
+            claw.DisconnectToy();
+        }
     }
 
     public bool IsComplete()
@@ -239,6 +397,12 @@ public class ResetZStep : IGrabAnimationStep
         float zd = claw.transform.position.z - targetZ;
         float moveZ = (zd > 0 ? -1 : 1) * speed * Time.deltaTime;
         claw.transform.position += new Vector3(0, 0, moveZ);
+
+        // 检查玩具是否仍然被夹住，如果没有则断开连接
+        if (claw.connectedToy != null && !claw.IsToyPartiallyGrabbed())
+        {
+            claw.DisconnectToy();
+        }
     }
 
     public bool IsComplete()
@@ -266,44 +430,16 @@ public class ResetXStep : IGrabAnimationStep
         float xd = claw.transform.position.x - targetX;
         float moveX = (xd > 0 ? -1 : 1) * speed * Time.deltaTime;
         claw.transform.position += new Vector3(moveX, 0, 0);
+
+        // 检查玩具是否仍然被夹住，如果没有则断开连接
+        if (claw.connectedToy != null && !claw.IsToyPartiallyGrabbed())
+        {
+            claw.DisconnectToy();
+        }
     }
 
     public bool IsComplete()
     {
         return Math.Abs(claw.transform.position.x - targetX) < 0.1f;
-    }
-}
-
-// 打开爪子步骤
-public class OpenClawStep : IGrabAnimationStep
-{
-    private ClawController claw;
-    private float speed;
-
-    public OpenClawStep(ClawController claw, float speed)
-    {
-        this.claw = claw;
-        this.speed = speed;
-    }
-
-    public void Execute()
-    {
-        float leftAngle = claw.leftClaw.localRotation.eulerAngles.x - speed * Time.deltaTime;
-        float rightAngle = claw.rightClaw.localRotation.eulerAngles.x - speed * Time.deltaTime;
-
-        // 限制最小角度
-        if (leftAngle <= 0)
-        {
-            leftAngle = 0;
-            rightAngle = 0;
-        }
-
-        claw.leftClaw.localRotation = Quaternion.Euler(leftAngle, 0, 0);
-        claw.rightClaw.localRotation = Quaternion.Euler(rightAngle, 0, 0);
-    }
-
-    public bool IsComplete()
-    {
-        return claw.leftClaw.localRotation.eulerAngles.x <= 0;
     }
 }

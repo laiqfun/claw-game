@@ -68,6 +68,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: Toy
       objectReference: {fileID: 0}
+    - target: {fileID: 919132149155446097, guid: 308685f05bf61e340b436e79243a7cc9, type: 3}
+      propertyPath: m_TagString
+      value: Toy
+      objectReference: {fileID: 0}
     - target: {fileID: 7622661218638243942, guid: 308685f05bf61e340b436e79243a7cc9, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
@@ -101,9 +105,9 @@ Rigidbody:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 8339923843289341631}
   serializedVersion: 4
-  m_Mass: 5
+  m_Mass: 1
   m_Drag: 0.05
-  m_AngularDrag: 0.05
+  m_AngularDrag: 0.5
   m_CenterOfMass: {x: 0, y: 0, z: 0}
   m_InertiaTensor: {x: 1, y: 1, z: 1}
   m_InertiaRotation: {x: 0, y: 0, z: 0, w: 1}
