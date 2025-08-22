@@ -1,4 +1,3 @@
-using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -6,6 +5,8 @@ using UnityEngine;
 public class ClawController : MonoBehaviour
 {
     public ButtonsController buttonsController;
+    public GameManager gameManager;
+    public float odds = 100;
     public float speed = 10;
     public float grabRotationSpeed = 30;
     public float boundX = 5;
@@ -30,14 +31,19 @@ public class ClawController : MonoBehaviour
     void Start()
     {
         transform.position = initialPosition;
+        leftClaw.localRotation = Quaternion.Euler(0, 0, 0);
+        rightClaw.localRotation = Quaternion.Euler(0, 0, 0);
         // 初始化动画步骤序列
         InitializeAnimationSteps();
     }
 
     void FixedUpdate()
     {
-        if (!isGrab) move();
-        grab();
+        if (gameManager.isInsertCoin)
+        {
+            if (!isGrab) move();
+            grab();
+        }
     }
 
     void move()
@@ -91,11 +97,13 @@ public class ClawController : MonoBehaviour
         if (currentStep.IsComplete())
         {
             currentStepIndex++;
+            // Debug.Log("Step completed: " + currentStepIndex);
             // 所有步骤执行完毕
             if (currentStepIndex >= animationSteps.Count)
             {
                 isGrab = false;
                 currentStepIndex = -1;
+                gameManager.OverGrab();
             }
         }
     }
@@ -124,10 +132,12 @@ public class ClawController : MonoBehaviour
             if (leftClaw.GetComponent<Collider>().bounds.Intersects(other.bounds))
             {
                 leftClawCollisions.Add(other.gameObject);
+                // Debug.Log("(Left)Collided with toy: " + other.gameObject.name);
             }
-            else if (rightClaw.GetComponent<Collider>().bounds.Intersects(other.bounds))
+            if (rightClaw.GetComponent<Collider>().bounds.Intersects(other.bounds))
             {
                 rightClawCollisions.Add(other.gameObject);
+                // Debug.Log("(Right)Collided with toy: " + other.gameObject.name);
             }
         }
     }
@@ -137,6 +147,7 @@ public class ClawController : MonoBehaviour
         // 移除碰撞记录
         if (other.CompareTag("Toy"))
         {
+            // Debug.Log("Toy left claw: " + other.gameObject.name);
             leftClawCollisions.Remove(other.gameObject);
             rightClawCollisions.Remove(other.gameObject);
 
@@ -151,14 +162,34 @@ public class ClawController : MonoBehaviour
     // 检查是否可以连接玩具（两个爪子都碰到同一个玩具）
     public bool CanConnectToy()
     {
+        // 创建需要移除的玩具列表
+        List<GameObject> toRemove = new List<GameObject>();
+
         foreach (GameObject toy in leftClawCollisions)
         {
+            // 检查玩具对象是否仍然有效
+            if (toy == null)
+            {
+                // 标记为需要移除
+                toRemove.Add(toy);
+                continue;
+            }
+
             if (rightClawCollisions.Contains(toy))
             {
                 connectedToy = toy;
+                Debug.Log(toy.name);
                 return true;
             }
         }
+
+        // 移除所有无效的玩具引用
+        foreach (GameObject toy in toRemove)
+        {
+            leftClawCollisions.Remove(toy);
+            rightClawCollisions.Remove(toy);
+        }
+
         return false;
     }
 
@@ -174,8 +205,37 @@ public class ClawController : MonoBehaviour
         }
     }
 
-    // 断开玩具连接
+    // 玩具需要紧紧抓住
+    public void ContinueConnectToy()
+    {
+        if (connectedToy != null)
+        {
+            // 使用插值方式平滑移动玩具
+            connectedToy.transform.position = Vector3.Lerp(
+                connectedToy.transform.position,
+                transform.position,
+                speed * Time.deltaTime
+            );
+        }
+    }
+
+    // 断开玩具连接（强力爪时不断开）
     public void DisconnectToy()
+    {
+        if (connectedToy != null && !gameManager.isStrongGrab)
+        {
+            gameManager.DisconnectToy();
+            Debug.Log("Disconnecting toy: " + connectedToy.name);
+            // 将玩具从爪子上分离
+            Rigidbody toyRb = connectedToy.GetComponent<Rigidbody>();
+            if (toyRb != null)
+                connectedToy.GetComponent<Rigidbody>().useGravity = true;
+            connectedToy.transform.SetParent(toysParent);
+            connectedToy = null;
+        }
+    }
+    // 结束玩具连接
+    public void OverconnectToy()
     {
         if (connectedToy != null)
         {
@@ -193,6 +253,7 @@ public class ClawController : MonoBehaviour
     public bool IsToyStillGrabbed()
     {
         if (connectedToy == null) return false;
+        if (Random.Range(0, 100) > odds) return false;
         return leftClawCollisions.Contains(connectedToy) && rightClawCollisions.Contains(connectedToy);
     }
 
@@ -202,6 +263,13 @@ public class ClawController : MonoBehaviour
         if (connectedToy == null) return false;
         return leftClawCollisions.Contains(connectedToy) || rightClawCollisions.Contains(connectedToy);
     }
+}
+
+// 动画步骤接口
+public interface IGrabAnimationStep
+{
+    void Execute();
+    bool IsComplete();
 }
 
 // 打开爪子步骤
@@ -234,7 +302,7 @@ public class OpenClawStep : IGrabAnimationStep
         // 完全打开爪子时断开玩具连接
         if (claw.connectedToy != null && leftAngle <= 0)
         {
-            claw.DisconnectToy();
+            claw.OverconnectToy();
         }
     }
 
@@ -242,13 +310,6 @@ public class OpenClawStep : IGrabAnimationStep
     {
         return claw.leftClaw.localRotation.eulerAngles.x <= 0;
     }
-}
-
-// 动画步骤接口
-public interface IGrabAnimationStep
-{
-    void Execute();
-    bool IsComplete();
 }
 
 // 下降步骤
@@ -325,7 +386,8 @@ public class CloseClawStep : IGrabAnimationStep
 
     public bool IsComplete()
     {
-        return claw.leftClaw.localRotation.eulerAngles.x >= targetAngle;
+        hasConnectedToy = false;
+        return Mathf.Abs(claw.leftClaw.localRotation.eulerAngles.x - targetAngle) < 0.1f;
     }
 }
 
@@ -350,26 +412,20 @@ public class AscendStep : IGrabAnimationStep
         if (claw.transform.position.y >= targetY)
         {
             claw.transform.position = new Vector3(
-                claw.transform.position.x, 
-                targetY, 
+                claw.transform.position.x,
+                targetY,
                 claw.transform.position.z
             );
         }
         // 玩具需要紧紧被夹住
-        if (claw.connectedToy != null)
-        {
-            // 使用插值方式平滑移动玩具
-            claw.connectedToy.transform.position = Vector3.Lerp(
-                claw.connectedToy.transform.position,
-                claw.transform.position,
-                speed * Time.deltaTime
-            );
-        }
+        claw.ContinueConnectToy();
         // 检查玩具是否仍然被夹住，如果没有则断开连接
+
         if (claw.connectedToy != null && !claw.IsToyStillGrabbed())
         {
             claw.DisconnectToy();
         }
+
     }
 
     public bool IsComplete()
@@ -398,6 +454,8 @@ public class ResetZStep : IGrabAnimationStep
         float moveZ = (zd > 0 ? -1 : 1) * speed * Time.deltaTime;
         claw.transform.position += new Vector3(0, 0, moveZ);
 
+
+        claw.ContinueConnectToy();
         // 检查玩具是否仍然被夹住，如果没有则断开连接
         if (claw.connectedToy != null && !claw.IsToyPartiallyGrabbed())
         {
@@ -407,7 +465,7 @@ public class ResetZStep : IGrabAnimationStep
 
     public bool IsComplete()
     {
-        return Math.Abs(claw.transform.position.z - targetZ) < 0.1f;
+        return Mathf.Abs(claw.transform.position.z - targetZ) < 0.1f;
     }
 }
 
@@ -431,6 +489,7 @@ public class ResetXStep : IGrabAnimationStep
         float moveX = (xd > 0 ? -1 : 1) * speed * Time.deltaTime;
         claw.transform.position += new Vector3(moveX, 0, 0);
 
+        claw.ContinueConnectToy();
         // 检查玩具是否仍然被夹住，如果没有则断开连接
         if (claw.connectedToy != null && !claw.IsToyPartiallyGrabbed())
         {
@@ -440,6 +499,6 @@ public class ResetXStep : IGrabAnimationStep
 
     public bool IsComplete()
     {
-        return Math.Abs(claw.transform.position.x - targetX) < 0.1f;
+        return Mathf.Abs(claw.transform.position.x - targetX) < 0.1f;
     }
 }

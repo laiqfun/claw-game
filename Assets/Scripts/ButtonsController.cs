@@ -4,15 +4,19 @@ using UnityEngine;
 
 public class ButtonsController : MonoBehaviour
 {
-
+    public GameManager gameManager;
+    public AudioController audioController;
     public float offset = 2f;
     [Tooltip("对齐方向(默认False向左对齐,True为向右对齐)")]
     public bool alignDirection = true;
     public Transform joystickControl;
     public Transform buttonPlunger;
-    public bool is_press_button = false;
-    public float horizontalInput = 0;
-    public float verticalInput = 0;
+    public Transform coin;
+    public bool is_press_button { get; private set; } = false;
+    public float horizontalInput { get; private set; } = 0;
+    public float verticalInput { get; private set; } = 0;
+    private Animation coinAnim;
+    private bool is_insertCoin = false;
     void Awake()
     {
         uint i = 1;
@@ -32,7 +36,7 @@ public class ButtonsController : MonoBehaviour
     // Start is called before the first frame update
     void Start()
     {
-
+        coinAnim = coin.GetComponent<Animation>();
     }
 
     // Update is called once per frame
@@ -40,6 +44,7 @@ public class ButtonsController : MonoBehaviour
     {
         PressButton();
         MoveJoystick();
+        InsertCoin();
     }
 
     void PressButton()
@@ -53,11 +58,14 @@ public class ButtonsController : MonoBehaviour
             {
                 buttonPlunger.Translate(new Vector3(0, -depth, 0));
                 is_press_button = true;
+                gameManager.action();
+                audioController.PlayButtonClip();
             }
             if (is_pressup_key && is_press_button == true)
             {
                 buttonPlunger.Translate(new Vector3(0, depth, 0));
                 is_press_button = false;
+                gameManager.action();
             }
         }
     }
@@ -74,6 +82,8 @@ public class ButtonsController : MonoBehaviour
             Vector2 inputVector = new Vector2(horizontalInput, -verticalInput).normalized;
             float inputStrength = Mathf.Clamp01(new Vector2(horizontalInput, verticalInput).magnitude);
 
+            if (inputStrength > 0) gameManager.action();
+
             // 1. 计算Y轴旋转角度（控制倾斜方向）
             // 用Atan2将输入方向转换为角度（0~360度），再根据模型适配调整偏移
             float directionAngle = Mathf.Atan2(inputVector.y, inputVector.x) * Mathf.Rad2Deg;
@@ -86,6 +96,26 @@ public class ButtonsController : MonoBehaviour
 
             // 3. 应用欧拉角（X:倾斜幅度，Y:倾斜方向，Z:固定0）
             joystickControl.rotation = Quaternion.Euler(tiltAngle, directionAngle, 0f);
+        }
+    }
+
+    void InsertCoin()
+    {
+        if (coin != null)
+        {
+            bool is_pressup_key = Input.GetKeyUp(KeyCode.Q);
+            if (!gameManager.isInsertCoin && coinAnim != null && coinAnim.isPlaying == false && !is_insertCoin && is_pressup_key)
+            {
+                coinAnim.Play();
+                is_insertCoin = true;
+            }
+            if (is_insertCoin && coinAnim.isPlaying == false)
+            {
+                audioController.PlayCoinClip();
+                gameManager.InsertCoin();
+                gameManager.action();
+                is_insertCoin = false;
+            }
         }
     }
 }
