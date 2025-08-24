@@ -1651,7 +1651,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   buttonsController: {fileID: 1155486120}
   gameManager: {fileID: 791473200}
-  odds: 80
+  odds: 60
   speed: 5
   grabRotationSpeed: 30
   boundX: 3.5

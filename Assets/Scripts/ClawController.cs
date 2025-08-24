@@ -151,11 +151,11 @@ public class ClawController : MonoBehaviour
             leftClawCollisions.Remove(other.gameObject);
             rightClawCollisions.Remove(other.gameObject);
 
-            // 如果连接的玩具离开爪子，断开连接
-            if (connectedToy == other.gameObject)
-            {
-                DisconnectToy();
-            }
+            // // 如果连接的玩具离开爪子，断开连接
+            // if (connectedToy == other.gameObject)
+            // {
+            //     DisconnectToy();
+            // }
         }
     }
 
@@ -234,6 +234,16 @@ public class ClawController : MonoBehaviour
             connectedToy = null;
         }
     }
+
+    // 概率掉落
+    public void OddsDisconnectToy()
+    {
+        if (Random.Range(0, 100) > odds)
+        {
+            DisconnectToy();
+        }
+    }
+
     // 结束玩具连接
     public void OverconnectToy()
     {
@@ -253,7 +263,6 @@ public class ClawController : MonoBehaviour
     public bool IsToyStillGrabbed()
     {
         if (connectedToy == null) return false;
-        if (Random.Range(0, 100) > odds) return false;
         return leftClawCollisions.Contains(connectedToy) && rightClawCollisions.Contains(connectedToy);
     }
 
@@ -421,16 +430,21 @@ public class AscendStep : IGrabAnimationStep
         claw.ContinueConnectToy();
         // 检查玩具是否仍然被夹住，如果没有则断开连接
 
-        if (claw.connectedToy != null && !claw.IsToyStillGrabbed())
-        {
-            claw.DisconnectToy();
-        }
+        // if (claw.connectedToy != null && !claw.IsToyStillGrabbed())
+        // {
+        //     claw.DisconnectToy();
+        // }
 
     }
 
     public bool IsComplete()
     {
-        return claw.transform.position.y >= targetY;
+        bool isComplete = claw.transform.position.y >= targetY;
+        if (isComplete)
+        {
+            claw.OddsDisconnectToy();
+        }
+        return isComplete;
     }
 }
 
